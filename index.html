@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>1일 1논문 트래커</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="주요 메뉴">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="img">
+              <path d="M5 4.5A2.5 2.5 0 0 1 7.5 2H19v17.5A2.5 2.5 0 0 1 16.5 22H7.5A2.5 2.5 0 0 1 5 19.5v-15Z" />
+              <path d="M9 7h6M9 11h6M9 15h4" />
+            </svg>
+          </span>
+          <div>
+            <strong>논문트래커</strong>
+            <span>1일 1논문 기록장</span>
+          </div>
+        </div>
+        <nav class="nav-list">
+          <a href="#calendar" data-route="calendar" class="nav-link is-active">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 2v4M16 2v4M3.5 9.5h17M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" /></svg>
+            캘린더
+          </a>
+          <a href="#list" data-route="list" class="nav-link">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></svg>
+            논문 목록
+          </a>
+          <a href="#stats" data-route="stats" class="nav-link">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5M4 19h16M8 16v-5M13 16V8M18 16v-8" /></svg>
+            통계
+          </a>
+        </nav>
+        <button class="primary-action" type="button" data-open-add>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+          논문 추가
+        </button>
+        <button class="secondary-action" type="button" data-open-sync>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v6l3-3M12 21v-6l-3 3" /><path d="M5 9a7 7 0 0 1 11.5-4.5M19 15A7 7 0 0 1 7.5 19.5" /></svg>
+          동기화 설정
+        </button>
+      </aside>
+
+      <main class="main-area">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Research Reading Dashboard</p>
+            <h1 id="viewTitle">월간 읽기 캘린더</h1>
+          </div>
+          <div class="topbar-actions">
+            <button class="icon-button" type="button" data-month-prev aria-label="이전 달">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+            </button>
+            <button class="month-chip" type="button" data-month-today>오늘</button>
+            <button class="icon-button" type="button" data-month-next aria-label="다음 달">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
+            </button>
+          </div>
+        </header>
+
+        <section class="view is-visible" data-view="calendar" aria-labelledby="viewTitle">
+          <div class="metric-grid" data-metrics></div>
+
+          <section class="calendar-panel" aria-label="월간 캘린더">
+            <div class="calendar-toolbar">
+              <div>
+                <span class="section-kicker">Calendar</span>
+                <h2 data-calendar-title></h2>
+              </div>
+              <div class="legend">
+                <span><i class="legend-dot blue"></i> 읽은 기간</span>
+                <span><i class="legend-dot yellow"></i> 오늘</span>
+              </div>
+            </div>
+            <div class="weekday-row" aria-hidden="true">
+              <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
+            </div>
+            <div class="calendar-grid" data-calendar-grid></div>
+          </section>
+        </section>
+
+        <section class="view" data-view="list" aria-labelledby="viewTitle">
+          <div class="list-toolbar">
+            <div class="search-box">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.3-4.3M10.8 18a7.2 7.2 0 1 1 0-14.4 7.2 7.2 0 0 1 0 14.4Z" /></svg>
+              <input type="search" data-search placeholder="제목, 키워드, 저널 검색" />
+            </div>
+            <select data-purpose-filter aria-label="목적 태그 필터"></select>
+          </div>
+          <div class="paper-list" data-paper-list></div>
+        </section>
+
+        <section class="view" data-view="stats" aria-labelledby="viewTitle">
+          <div class="stats-grid" data-stats-grid></div>
+        </section>
+
+        <section class="view" data-view="detail" aria-labelledby="viewTitle">
+          <div class="detail-view" data-detail></div>
+        </section>
+      </main>
+    </div>
+
+    <div class="modal-backdrop" data-modal hidden>
+      <form class="paper-form" data-paper-form>
+        <div class="form-header">
+          <div>
+            <p class="eyebrow">Paper Entry</p>
+            <h2 data-form-title>논문 추가</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-modal aria-label="닫기">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+
+        <input type="hidden" name="id" />
+
+        <div class="mode-switch" role="tablist" aria-label="입력 모드">
+          <button type="button" class="is-active" data-form-mode="quick">빠른 추가</button>
+          <button type="button" data-form-mode="detail">상세 입력</button>
+        </div>
+
+        <div class="form-grid">
+          <label class="field wide citation-field">
+            <span>Citation 붙여넣기</span>
+            <textarea data-citation-input rows="4" placeholder="@article{...} 또는 APA/MLA/DOI/URL citation"></textarea>
+          </label>
+          <div class="citation-actions">
+            <button type="button" class="ghost-button" data-parse-citation>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M4 12h16M4 17h7" /><path d="m17 6 3 3-3 3" /></svg>
+              자동 정리
+            </button>
+            <span data-citation-status></span>
+          </div>
+          <label class="field wide">
+            <span>논문 제목 <em>필수</em></span>
+            <input name="title" required placeholder="예: Microplastics exposure and aquatic toxicity" />
+          </label>
+          <label class="field">
+            <span>읽기 시작 날짜 <em>필수</em></span>
+            <input name="readStartDate" type="date" required />
+          </label>
+          <label class="field">
+            <span>읽기 종료 날짜 <em>필수</em></span>
+            <input name="readEndDate" type="date" required />
+          </label>
+          <label class="field">
+            <span>읽은 목적 <em>필수</em></span>
+            <select name="purposeTag" required></select>
+          </label>
+          <label class="field add-tag-field">
+            <span>목적 태그 추가</span>
+            <div class="inline-add">
+              <input data-new-purpose placeholder="예: 저널클럽" />
+              <button type="button" class="icon-button" data-add-purpose aria-label="목적 태그 추가">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+              </button>
+            </div>
+          </label>
+
+          <div class="detail-fields" data-detail-fields>
+            <label class="field">
+              <span>저자</span>
+              <input name="authors" placeholder="쉼표로 구분" />
+            </label>
+            <label class="field">
+              <span>발행연도</span>
+              <input name="year" type="number" min="1800" max="2200" placeholder="2026" />
+            </label>
+            <label class="field">
+              <span>저널/학회명</span>
+              <input name="venue" placeholder="Journal or Conference" />
+            </label>
+            <label class="field">
+              <span>DOI</span>
+              <input name="doi" placeholder="10.xxxx/..." />
+            </label>
+            <label class="field">
+              <span>URL</span>
+              <input name="url" type="url" placeholder="https://..." />
+            </label>
+            <label class="field">
+              <span>키워드</span>
+              <input name="keywords" placeholder="쉼표로 구분" />
+            </label>
+            <label class="field">
+              <span>주제 태그</span>
+              <input name="topicTags" placeholder="예: NLP, Transformer" />
+            </label>
+            <label class="field wide">
+              <span>초록</span>
+              <textarea name="abstract" rows="4" placeholder="논문 초록을 붙여넣으세요"></textarea>
+            </label>
+            <label class="field wide">
+              <span>개인 메모</span>
+              <textarea name="memo" rows="4" placeholder="읽은 이유, 핵심 문장, 다음에 볼 내용"></textarea>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-footer">
+          <button class="ghost-button" type="button" data-close-modal>취소</button>
+          <button class="save-button" type="submit">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" /><path d="M17 21v-8H7v8M7 3v5h8" /></svg>
+            저장
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div class="modal-backdrop" data-sync-modal hidden>
+      <section class="sync-panel" aria-label="동기화 설정">
+        <div class="form-header">
+          <div>
+            <p class="eyebrow">Cloud Sync</p>
+            <h2>DB 동기화 설정</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-sync aria-label="닫기">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+
+        <div class="sync-status" data-sync-status>로컬 저장 모드</div>
+
+        <div class="form-grid">
+          <label class="field wide">
+            <span>Supabase Project URL</span>
+            <input data-sync-url placeholder="https://xxxx.supabase.co" />
+          </label>
+          <label class="field wide">
+            <span>Supabase anon key</span>
+            <input data-sync-key placeholder="eyJhbGciOi..." />
+          </label>
+          <label class="field wide">
+            <span>로그인 이메일</span>
+            <input data-sync-email type="email" placeholder="me@example.com" />
+          </label>
+        </div>
+
+        <div class="sync-actions">
+          <button class="save-button" type="button" data-save-sync-config>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" /><path d="M17 21v-8H7v8M7 3v5h8" /></svg>
+            설정 저장
+          </button>
+          <button class="ghost-button" type="button" data-send-login-link>로그인 링크 받기</button>
+          <button class="ghost-button" type="button" data-sync-now>지금 동기화</button>
+          <button class="ghost-button" type="button" data-sign-out>로그아웃</button>
+        </div>
+
+        <details class="setup-details">
+          <summary>Supabase 테이블 만들기 SQL</summary>
+          <textarea readonly rows="10" data-sync-sql></textarea>
+        </details>
+      </section>
+    </div>
+
+    <div class="toast" data-toast hidden></div>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+    <script src="./paper-utils.js" defer></script>
+    <script src="./app.js" defer></script>
+  </body>
+</html>
