@@ -141,6 +141,73 @@ svg {
   background: #eaf6fc;
 }
 
+.monthly-goal-note {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  color: #4f4214;
+  border: 1px solid rgba(226, 185, 59, 0.24);
+  border-radius: 8px;
+  background: linear-gradient(180deg, #fff3bd, #fff8dc);
+  box-shadow: 0 12px 22px rgba(166, 130, 28, 0.12);
+}
+
+.goal-note-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.goal-note-header strong,
+.goal-note-kicker,
+.goal-note-header small,
+.goal-note-footer span {
+  display: block;
+}
+
+.goal-note-header strong {
+  margin-top: 3px;
+  font-size: 16px;
+}
+
+.goal-note-kicker,
+.goal-note-header small,
+.goal-note-footer span {
+  color: rgba(79, 66, 20, 0.68);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.monthly-goal-note textarea {
+  width: 100%;
+  min-height: 130px;
+  resize: vertical;
+  padding: 10px 11px;
+  color: #44370b;
+  border: 1px solid rgba(226, 185, 59, 0.22);
+  border-radius: 8px;
+  outline: none;
+  background: rgba(255, 255, 255, 0.4);
+  line-height: 1.55;
+}
+
+.monthly-goal-note textarea:focus {
+  border-color: rgba(108, 174, 215, 0.72);
+  box-shadow: 0 0 0 3px rgba(185, 223, 245, 0.5);
+}
+
+.monthly-goal-note textarea::placeholder {
+  color: rgba(79, 66, 20, 0.48);
+}
+
+.goal-note-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .primary-action,
 .secondary-action,
 .save-button,
@@ -982,6 +1049,10 @@ textarea:focus {
 
   .primary-action {
     margin-top: 0;
+  }
+
+  .monthly-goal-note textarea {
+    min-height: 110px;
   }
 
   .metric-grid {

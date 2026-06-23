@@ -1,6 +1,7 @@
 const STORAGE_KEYS = {
   papers: "daily-paper-tracker:papers",
   purposeTags: "daily-paper-tracker:purpose-tags",
+  monthlyGoals: "daily-paper-tracker:monthly-goals",
   cloudConfig: "daily-paper-tracker:cloud-config",
 };
 
@@ -11,8 +12,12 @@ const SUPABASE_SETUP_SQL = `create table if not exists public.paper_tracker_stat
   user_id uuid primary key references auth.users(id) on delete cascade,
   papers jsonb not null default '[]'::jsonb,
   purpose_tags jsonb not null default '[]'::jsonb,
+  monthly_goals jsonb not null default '{}'::jsonb,
   updated_at timestamptz not null default now()
 );
+
+alter table public.paper_tracker_state
+add column if not exists monthly_goals jsonb not null default '{}'::jsonb;
 
 alter table public.paper_tracker_state enable row level security;
 
@@ -44,6 +49,9 @@ const els = {
   metrics: document.querySelector("[data-metrics]"),
   calendarTitle: document.querySelector("[data-calendar-title]"),
   calendarGrid: document.querySelector("[data-calendar-grid]"),
+  goalMonth: document.querySelector("[data-goal-month]"),
+  monthlyGoal: document.querySelector("[data-monthly-goal]"),
+  goalStatus: document.querySelector("[data-goal-status]"),
   paperList: document.querySelector("[data-paper-list]"),
   purposeFilter: document.querySelector("[data-purpose-filter]"),
   search: document.querySelector("[data-search]"),
@@ -69,6 +77,7 @@ const els = {
 const state = {
   papers: loadPapers(),
   purposeTags: loadPurposeTags(),
+  monthlyGoals: loadMonthlyGoals(),
   currentMonth: startOfMonth(new Date()),
   route: "calendar",
   selectedPaperId: null,
@@ -84,6 +93,7 @@ const state = {
 };
 
 let citationParseTimer;
+let monthlyGoalStatusTimer;
 
 function normalizeInitialState() {
   const names = new Set(state.purposeTags.map((tag) => tag.name));
@@ -141,6 +151,10 @@ function loadPurposeTags() {
   }).filter((tag) => tag.name);
 }
 
+function loadMonthlyGoals() {
+  return normalizeMonthlyGoals(readStorage(STORAGE_KEYS.monthlyGoals, {}));
+}
+
 function readStorage(key, fallback) {
   try {
     return JSON.parse(localStorage.getItem(key)) ?? fallback;
@@ -156,6 +170,11 @@ function savePapers() {
 
 function savePurposeTags() {
   localStorage.setItem(STORAGE_KEYS.purposeTags, JSON.stringify(state.purposeTags));
+  queueCloudSave();
+}
+
+function saveMonthlyGoals() {
+  localStorage.setItem(STORAGE_KEYS.monthlyGoals, JSON.stringify(state.monthlyGoals));
   queueCloudSave();
 }
 
@@ -206,6 +225,16 @@ function toISODate(date) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function getCurrentMonthKey() {
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function dateFromMonthKey(key) {
+  const [year, month] = key.split("-").map(Number);
+  return new Date(year, month - 1, 1);
 }
 
 function addDays(date, amount) {
@@ -352,6 +381,42 @@ function render() {
   renderList();
   renderStats();
   renderDetail();
+}
+
+function renderMonthlyGoal() {
+  if (!els.monthlyGoal) return;
+  const key = getCurrentMonthKey();
+  const savedGoal = state.monthlyGoals[key]?.text || "";
+  els.goalMonth.textContent = MONTH_FORMATTER.format(dateFromMonthKey(key));
+  els.monthlyGoal.value = savedGoal;
+  updateMonthlyGoalStatus("자동 저장");
+}
+
+function updateMonthlyGoal(value) {
+  const key = getCurrentMonthKey();
+  const trimmed = value.trim();
+  if (trimmed) {
+    state.monthlyGoals[key] = {
+      text: value,
+      updatedAt: new Date().toISOString(),
+    };
+  } else {
+    delete state.monthlyGoals[key];
+  }
+
+  saveMonthlyGoals();
+  updateMonthlyGoalStatus("저장됨");
+}
+
+function updateMonthlyGoalStatus(message) {
+  if (!els.goalStatus) return;
+  els.goalStatus.textContent = message;
+  window.clearTimeout(monthlyGoalStatusTimer);
+  if (message !== "자동 저장") {
+    monthlyGoalStatusTimer = window.setTimeout(() => {
+      if (els.goalStatus) els.goalStatus.textContent = "자동 저장";
+    }, 1400);
+  }
 }
 
 function renderNavigation() {
@@ -954,7 +1019,7 @@ async function syncNow({ quiet = false } = {}) {
 async function fetchCloudState() {
   const { data, error } = await state.cloud.client
     .from("paper_tracker_state")
-    .select("papers,purpose_tags,updated_at")
+    .select("papers,purpose_tags,monthly_goals,updated_at")
     .eq("user_id", state.cloud.user.id)
     .maybeSingle();
 
@@ -970,6 +1035,7 @@ async function upsertCloudState({ quiet = false } = {}) {
       user_id: state.cloud.user.id,
       papers: state.papers,
       purpose_tags: state.purposeTags,
+      monthly_goals: state.monthlyGoals,
       updated_at: new Date().toISOString(),
     }, { onConflict: "user_id" });
 
@@ -982,12 +1048,16 @@ async function upsertCloudState({ quiet = false } = {}) {
 function applyCloudSnapshot(remote) {
   const remotePapers = normalizePaperArray(remote.papers || []);
   const remotePurposeTags = normalizePurposeTagArray(remote.purpose_tags || []);
+  const remoteMonthlyGoals = normalizeMonthlyGoals(remote.monthly_goals || {});
   state.cloud.applyingRemote = true;
   state.papers = mergePapers(state.papers, remotePapers);
   state.purposeTags = mergePurposeTags(state.purposeTags, remotePurposeTags);
+  state.monthlyGoals = mergeMonthlyGoals(state.monthlyGoals, remoteMonthlyGoals);
   savePapers();
   savePurposeTags();
+  saveMonthlyGoals();
   state.cloud.applyingRemote = false;
+  renderMonthlyGoal();
   render();
 }
 
@@ -1023,6 +1093,31 @@ function normalizePurposeTagArray(rawTags) {
   }).filter((tag) => tag.name);
 }
 
+function normalizeMonthlyGoals(rawGoals) {
+  if (!rawGoals || typeof rawGoals !== "object" || Array.isArray(rawGoals)) return {};
+
+  return Object.entries(rawGoals).reduce((goals, [key, value]) => {
+    if (!/^\d{4}-\d{2}$/.test(key)) return goals;
+
+    if (typeof value === "string" && value.trim()) {
+      goals[key] = {
+        text: value,
+        updatedAt: "",
+      };
+      return goals;
+    }
+
+    if (value && typeof value === "object" && typeof value.text === "string" && value.text.trim()) {
+      goals[key] = {
+        text: value.text,
+        updatedAt: value.updatedAt || "",
+      };
+    }
+
+    return goals;
+  }, {});
+}
+
 function mergePapers(localPapers, remotePapers) {
   const byId = new Map();
   [...localPapers, ...remotePapers].forEach((paper) => {
@@ -1040,6 +1135,19 @@ function mergePurposeTags(localTags, remoteTags) {
     if (!byName.has(tag.name)) byName.set(tag.name, tag);
   });
   return [...byName.values()];
+}
+
+function mergeMonthlyGoals(localGoals, remoteGoals) {
+  const merged = { ...localGoals };
+
+  Object.entries(remoteGoals).forEach(([key, remoteGoal]) => {
+    const localGoal = merged[key];
+    if (!localGoal || new Date(remoteGoal.updatedAt || 0) > new Date(localGoal.updatedAt || 0)) {
+      merged[key] = remoteGoal;
+    }
+  });
+
+  return merged;
 }
 
 function formatCloudError(error) {
@@ -1293,6 +1401,10 @@ function bindEvents() {
     }, 350);
   });
 
+  els.monthlyGoal.addEventListener("input", (event) => {
+    updateMonthlyGoal(event.target.value);
+  });
+
   els.newPurpose.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
@@ -1319,5 +1431,6 @@ function bindEvents() {
 normalizeInitialState();
 bindEvents();
 handleRoute();
+renderMonthlyGoal();
 renderSyncConfig();
 void initCloudSync({ silent: true });
