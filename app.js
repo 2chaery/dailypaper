@@ -8,6 +8,16 @@ const STORAGE_KEYS = {
 const DEFAULT_PURPOSE_TAGS = ["랩세미나", "Envtox", "기타"];
 const MONTH_FORMATTER = new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "long" });
 const SHORT_DATE_FORMATTER = new Intl.DateTimeFormat("ko-KR", { month: "short", day: "numeric" });
+const STAT_COLORS = [
+  "var(--blue)",
+  "var(--yellow)",
+  "var(--mint)",
+  "var(--rose)",
+  "#d8d2ff",
+  "#bfe7e2",
+  "#ffd6a8",
+  "#c9d8ff",
+];
 const SUPABASE_SETUP_SQL = `create table if not exists public.paper_tracker_state (
   user_id uuid primary key references auth.users(id) on delete cascade,
   papers jsonb not null default '[]'::jsonb,
@@ -213,6 +223,10 @@ function parseList(value) {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean))];
+}
+
+function formatAuthors(authors) {
+  return (Array.isArray(authors) ? authors : []).filter(Boolean).join(", ");
 }
 
 function parseDate(iso) {
@@ -583,6 +597,7 @@ function renderList() {
     <article class="paper-card">
       <div>
         <h3><a href="#paper/${encodeURIComponent(paper.id)}">${escapeHTML(paper.title)}</a></h3>
+        <p class="paper-authors"><span>저자</span> ${escapeHTML(formatAuthors(paper.authors) || "미기록")}</p>
         <p class="paper-meta">
           <span>${formatFullDateRange(paper.readStartDate, paper.readEndDate)}</span>
           ${paper.venue ? `<span>${escapeHTML(paper.venue)}</span>` : ""}
@@ -624,6 +639,97 @@ function filteredPapers() {
     });
 }
 
+function exportPaperListToExcel() {
+  const papers = filteredPapers();
+  if (!papers.length) {
+    showToast("내보낼 논문이 없습니다.");
+    return;
+  }
+
+  const columns = [
+    "논문 제목",
+    "저자",
+    "발행연도",
+    "저널/학회명",
+    "DOI",
+    "URL",
+    "초록",
+    "개인 메모",
+    "읽기 시작 날짜",
+    "읽기 종료 날짜",
+    "읽은 기간",
+    "목적 태그",
+    "키워드",
+    "주제 태그",
+    "생성일",
+    "수정일",
+  ];
+
+  const rows = papers.map((paper) => [
+    paper.title,
+    formatAuthors(paper.authors),
+    paper.year || "",
+    paper.venue,
+    paper.doi,
+    paper.url,
+    paper.abstract,
+    paper.memo,
+    paper.readStartDate,
+    paper.readEndDate,
+    formatFullDateRange(paper.readStartDate, paper.readEndDate),
+    paper.purposeTag,
+    paper.keywords.join(", "),
+    paper.topicTags.join(", "),
+    paper.createdAt,
+    paper.updatedAt,
+  ]);
+
+  const table = `
+    <table>
+      <thead>${excelRow(columns, "th")}</thead>
+      <tbody>${rows.map((row) => excelRow(row)).join("")}</tbody>
+    </table>
+  `;
+  const workbook = `<!doctype html>
+    <html>
+      <head>
+        <meta charset="UTF-8" />
+        <style>
+          body { font-family: Pretendard, Arial, sans-serif; }
+          table { border-collapse: collapse; }
+          th, td { border: 1px solid #d9e3ea; padding: 8px; vertical-align: top; mso-number-format: "\\@"; }
+          th { background: #edf8ff; font-weight: 700; }
+        </style>
+      </head>
+      <body>${table}</body>
+    </html>`;
+
+  downloadTextFile(workbook, `paper-list-${toISODate(new Date())}.xls`, "application/vnd.ms-excel;charset=utf-8");
+  showToast(`논문 ${papers.length}편을 엑셀로 내보냈습니다.`);
+}
+
+function excelRow(values, tagName = "td") {
+  return `<tr>${values.map((value) => excelCell(value, tagName)).join("")}</tr>`;
+}
+
+function excelCell(value, tagName = "td") {
+  const text = String(value ?? "");
+  const safeText = /^[=+\-@]/.test(text) ? `\u200B${text}` : text;
+  return `<${tagName} style='mso-number-format:"\\@";'>${escapeHTML(safeText).replace(/\r?\n/g, "<br>")}</${tagName}>`;
+}
+
+function downloadTextFile(content, filename, type) {
+  const blob = new Blob(["\ufeff", content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 function renderStats() {
   const stats = getStats();
   const cards = [
@@ -640,7 +746,8 @@ function renderStats() {
 
 function renderStatCard(title, subtitle, rows) {
   const topRows = rows.slice(0, 10);
-  const max = Math.max(1, ...topRows.map(([, count]) => count));
+  const total = rows.reduce((sum, [, count]) => sum + count, 0);
+  const segments = buildStatSegments(rows, total);
   return `
     <article class="stat-card">
       <header>
@@ -651,18 +758,66 @@ function renderStatCard(title, subtitle, rows) {
         <span>${rows.length}개</span>
       </header>
       ${topRows.length ? `
+        <div class="share-strip" aria-label="전체 대비 비율">
+          ${segments.map((segment) => `
+            <span
+              class="share-segment"
+              style="--share:${segment.percent}%;--segment-color:${segment.color};"
+              title="${escapeAttribute(segment.label)} ${formatShare(segment.count, total)}"
+            ></span>
+          `).join("")}
+        </div>
+        <div class="share-legend">
+          ${segments.slice(0, 5).map((segment) => `
+            <span><i style="--legend-color:${segment.color};"></i>${escapeHTML(segment.label)} ${formatShare(segment.count, total)}</span>
+          `).join("")}
+        </div>
+        <p class="stat-share-note">총 ${total}건 기준</p>
         <div class="bar-list">
-          ${topRows.map(([label, count]) => `
-            <div class="bar-row">
+          ${topRows.map(([label, count], index) => `
+            <div class="bar-row" style="--bar-color:${statColor(index)};">
               <span class="bar-label" title="${escapeHTML(label)}">${escapeHTML(label)}</span>
-              <span class="bar-track"><span class="bar-fill" style="width:${Math.max(8, (count / max) * 100)}%"></span></span>
-              <span class="bar-count">${count}</span>
+              <span class="bar-track"><span class="bar-fill" style="width:${Math.max(3, (count / total) * 100)}%"></span></span>
+              <span class="bar-count"><strong>${count}</strong><em>${formatShare(count, total)}</em></span>
             </div>
           `).join("")}
         </div>
       ` : `<p class="paper-meta">아직 통계가 없습니다.</p>`}
     </article>
   `;
+}
+
+function buildStatSegments(rows, total) {
+  const visibleRows = rows.slice(0, 7);
+  const segments = visibleRows.map(([label, count], index) => ({
+    label,
+    count,
+    color: statColor(index),
+    percent: total ? (count / total) * 100 : 0,
+  }));
+  const visibleTotal = visibleRows.reduce((sum, [, count]) => sum + count, 0);
+  const rest = total - visibleTotal;
+
+  if (rest > 0) {
+    segments.push({
+      label: "기타",
+      count: rest,
+      color: statColor(visibleRows.length),
+      percent: (rest / total) * 100,
+    });
+  }
+
+  return segments;
+}
+
+function statColor(index) {
+  return STAT_COLORS[index % STAT_COLORS.length];
+}
+
+function formatShare(count, total) {
+  if (!total) return "0%";
+  const share = (count / total) * 100;
+  return share >= 10 ? `${Math.round(share)}%` : `${share.toFixed(1)}%`;
 }
 
 function renderDetail() {
@@ -1344,6 +1499,10 @@ function bindEvents() {
 
     if (target.matches("[data-sync-now]")) {
       void syncNow();
+    }
+
+    if (target.matches("[data-export-list]")) {
+      exportPaperListToExcel();
     }
 
     if (target.matches("[data-sign-out]")) {
