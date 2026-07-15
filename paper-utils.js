@@ -9,13 +9,17 @@
     if (!rawText) return emptyResult();
 
     const bibtex = parseBibTeX(rawText);
-    const base = bibtex || {};
+    const apa = parseApaCitation(rawText);
+    const structured = parseStructuredCitation(rawText);
+    const base = mergeParsedCitation(bibtex || {}, apa, structured);
     const doi = normalizeDoi(base.doi || extractDoi(rawText));
     const url = normalizeUrl(base.url || extractUrl(rawText));
     const year = normalizeYear(base.year || extractYear(rawText));
     const title = cleanTitle(base.title || extractTitle(rawText, year));
     const authors = base.authors?.length ? base.authors : extractAuthors(rawText, year);
     const venue = cleanVenue(base.venue || extractVenue(rawText, title, year));
+    const abstract = cleanLooseText(base.abstract || extractAbstract(rawText));
+    const keywords = base.keywords?.length ? base.keywords : extractKeywords(rawText);
 
     return {
       title,
@@ -24,6 +28,8 @@
       venue,
       doi,
       url,
+      abstract,
+      keywords,
       sourceType: bibtex ? "bibtex" : "citation",
     };
   }
@@ -36,7 +42,62 @@
       venue: "",
       doi: "",
       url: "",
+      abstract: "",
+      keywords: [],
       sourceType: "empty",
+    };
+  }
+
+  function mergeParsedCitation(...sources) {
+    return sources.reduce((merged, source) => {
+      if (!source) return merged;
+      return {
+        title: merged.title || source.title || "",
+        authors: merged.authors?.length ? merged.authors : source.authors || [],
+        year: merged.year || source.year,
+        venue: merged.venue || source.venue || "",
+        doi: merged.doi || source.doi || "",
+        url: merged.url || source.url || "",
+        abstract: merged.abstract || source.abstract || "",
+        keywords: merged.keywords?.length ? merged.keywords : source.keywords || [],
+      };
+    }, emptyResult());
+  }
+
+  function parseApaCitation(text) {
+    const oneLine = removeSections(text)
+      .replace(/\s+/g, " ")
+      .trim();
+    const match = oneLine.match(/^(.+?)\s*\((\d{4})\)\.?\s+(.+?)\.\s+([^.\n]+?)(?:,\s*\d|\.|\s+https?:\/\/|\s+doi:|$)/i);
+    if (!match) return null;
+
+    const authors = parseAuthorList(match[1]);
+    return {
+      authors,
+      year: Number(match[2]),
+      title: cleanTitle(match[3]),
+      venue: cleanVenue(match[4]),
+    };
+  }
+
+  function parseStructuredCitation(text) {
+    const labeled = parseLabeledFields(text);
+    const body = removeSections(text);
+    const lines = getCitationLines(body)
+      .filter((line) => !isIdentifierLine(line))
+      .filter((line) => !isMetadataLine(line));
+    const meaningful = lines.filter((line) => !isYearOnlyLine(line));
+    const guessed = guessLineBasedCitation(meaningful);
+
+    return {
+      title: labeled.title || guessed.title || "",
+      authors: labeled.authors?.length ? labeled.authors : guessed.authors || [],
+      year: labeled.year || extractYear(text),
+      venue: labeled.venue || guessed.venue || "",
+      doi: labeled.doi || extractDoi(text),
+      url: labeled.url || extractUrl(text),
+      abstract: labeled.abstract || extractAbstract(text),
+      keywords: labeled.keywords?.length ? labeled.keywords : extractKeywords(text),
     };
   }
 
@@ -153,6 +214,139 @@
     return [given, family].filter(Boolean).join(" ");
   }
 
+  function parseLabeledFields(text) {
+    const fields = {};
+    getCitationLines(text).forEach((line) => {
+      const match = line.match(/^(authors?|title|journal|source title|publication title|venue|year|doi|url|abstract|keywords?)\s*:\s*(.+)$/i);
+      if (!match) return;
+      const label = match[1].toLowerCase();
+      const value = cleanLooseText(match[2]);
+      if (!value) return;
+
+      if (label.startsWith("author")) fields.authors = parseAuthorList(value);
+      if (label === "title") fields.title = cleanTitle(value);
+      if (["journal", "source title", "publication title", "venue"].includes(label)) fields.venue = cleanVenue(value);
+      if (label === "year") fields.year = normalizeYear(value);
+      if (label === "doi") fields.doi = normalizeDoi(value);
+      if (label === "url") fields.url = normalizeUrl(value);
+      if (label === "abstract") fields.abstract = value;
+      if (label.startsWith("keyword")) fields.keywords = splitKeywords(value);
+    });
+
+    return fields;
+  }
+
+  function guessLineBasedCitation(lines) {
+    const cleanLines = lines
+      .map((line) => cleanLooseText(line.replace(/^(authors?|title|journal|source title|publication title|venue)\s*:\s*/i, "")))
+      .filter(Boolean);
+    if (!cleanLines.length) return {};
+
+    const titleIndex = findTitleLineIndex(cleanLines);
+    const title = titleIndex >= 0 ? cleanLines[titleIndex] : "";
+    const beforeTitle = titleIndex > 0 ? cleanLines.slice(0, titleIndex).join(", ") : "";
+    const afterTitle = titleIndex >= 0 ? cleanLines.slice(titleIndex + 1) : [];
+    const authors = parseAuthorList(beforeTitle);
+    const venue = afterTitle.find((line) => !looksLikeAuthorLine(line) && !looksLikeTitleMetadata(line)) || "";
+
+    return {
+      title,
+      authors,
+      venue: cleanVenue(venue),
+    };
+  }
+
+  function findTitleLineIndex(lines) {
+    if (lines.length >= 3 && looksLikeAuthorLine(lines[0])) return 1;
+    if (lines.length >= 2 && looksLikeAuthorLine(lines[0])) return 1;
+
+    let bestIndex = -1;
+    let bestScore = -Infinity;
+    lines.forEach((line, index) => {
+      if (looksLikeAuthorLine(line) || looksLikeTitleMetadata(line)) return;
+      const words = line.split(/\s+/).filter(Boolean);
+      const score = words.length * 2 + Math.min(line.length, 180) / 18 + (/[():-]/.test(line) ? 3 : 0) - index;
+      if (score > bestScore) {
+        bestScore = score;
+        bestIndex = index;
+      }
+    });
+
+    return bestIndex;
+  }
+
+  function parseAuthorList(value) {
+    const cleaned = cleanLooseText(value);
+    if (!cleaned) return [];
+
+    const apaAuthors = parseApaAuthors(cleaned);
+    if (apaAuthors.length) return apaAuthors;
+
+    return cleaned
+      .replace(/\s*&\s*/g, ", ")
+      .replace(/\s+\band\b\s+/gi, ", ")
+      .split(/\s*;\s*|\s*,\s*/g)
+      .map((name) => cleanLooseText(name))
+      .filter((name) => looksLikeAuthorName(name));
+  }
+
+  function looksLikeAuthorLine(line) {
+    return parseAuthorList(line).length >= 2;
+  }
+
+  function looksLikeAuthorName(name) {
+    if (!name || /\d/.test(name)) return false;
+    if (/^(volume|pages?|journal|abstract|keywords?|issn|isbn)$/i.test(name)) return false;
+    return /^([A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ'’-]+\.?\s*){1,5}$/.test(name);
+  }
+
+  function looksLikeTitleMetadata(line) {
+    return isMetadataLine(line) || isIdentifierLine(line) || isYearOnlyLine(line);
+  }
+
+  function getCitationLines(text) {
+    return String(text || "")
+      .split(/\r?\n/)
+      .map((line) => line.replace(/^>\s*/, ""))
+      .map((line) => cleanLooseText(line))
+      .filter(Boolean);
+  }
+
+  function isIdentifierLine(line) {
+    return /^(doi\s*:|https?:\/\/|\(?https?:\/\/)/i.test(line) || DOI_REGEX.test(line);
+  }
+
+  function isMetadataLine(line) {
+    return /^(vol\.?|volume|issue|number|no\.?|pages?|pp\.?|issn|isbn|article|article number|copyright|available online|received|accepted|published)\b/i.test(line);
+  }
+
+  function isYearOnlyLine(line) {
+    return /^\(?((18|19|20|21)\d{2})\)?[,]?$/i.test(line);
+  }
+
+  function removeSections(text) {
+    return String(text || "")
+      .replace(/\bAbstract\s*:\s*[\s\S]*?(?=\bKeywords?\s*:|$)/i, " ")
+      .replace(/\bKeywords?\s*:\s*[\s\S]*$/i, " ");
+  }
+
+  function extractAbstract(text) {
+    const match = String(text || "").match(/\bAbstract\s*:\s*([\s\S]*?)(?=\bKeywords?\s*:|$)/i);
+    return match ? cleanLooseText(match[1]) : "";
+  }
+
+  function extractKeywords(text) {
+    const match = String(text || "").match(/\bKeywords?\s*:\s*([\s\S]*?)$/i);
+    return match ? splitKeywords(match[1]) : [];
+  }
+
+  function splitKeywords(value) {
+    return [...new Set(String(value || "")
+      .split(/[;\n,]/)
+      .map((keyword) => cleanLooseText(keyword))
+      .filter(Boolean))];
+  }
+
   function extractDoi(text) {
     const doiUrlMatch = text.match(/https?:\/\/(?:dx\.)?doi\.org\/([^\s<>"']+)/i);
     if (doiUrlMatch) return doiUrlMatch[1];
@@ -169,8 +363,9 @@
   }
 
   function extractUrl(text) {
-    const match = text.match(URL_REGEX);
-    return match ? match[0] : "";
+    const matches = String(text || "").match(/https?:\/\/[^\s<>"']+/ig) || [];
+    const nonDoi = matches.find((url) => !/^https?:\/\/(?:dx\.)?doi\.org\//i.test(url));
+    return nonDoi || matches[0] || "";
   }
 
   function normalizeUrl(value) {

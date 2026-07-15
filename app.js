@@ -979,6 +979,8 @@ function applyCitationFields(parsed, overwrite) {
     venue: parsed.venue || "",
     doi: parsed.doi || "",
     url: parsed.url || "",
+    abstract: parsed.abstract || "",
+    keywords: parsed.keywords?.join(", ") || "",
   };
 
   let appliedCount = 0;
@@ -990,7 +992,7 @@ function applyCitationFields(parsed, overwrite) {
     }
   });
 
-  if (values.authors || values.year || values.venue || values.doi || values.url) {
+  if (values.authors || values.year || values.venue || values.doi || values.url || values.abstract || values.keywords) {
     setFormMode("detail");
   }
 
@@ -1005,6 +1007,8 @@ function getExtractedCitationLabels(parsed) {
   if (parsed.venue) labels.push("저널/학회");
   if (parsed.doi) labels.push("DOI");
   if (parsed.url) labels.push("URL");
+  if (parsed.abstract) labels.push("초록");
+  if (parsed.keywords?.length) labels.push("키워드");
   return labels;
 }
 
